@@ -1,27 +1,16 @@
-"use strict"
-let config = {
-    parent: 'phaser-game',
-    type: Phaser.CANVAS,
-    render: {
-        pixelArt: true  
-    },
+const config = {
+    type: Phaser.AUTO,
+    width: 1400,
+    height: 700,
+    backgroundColor: '#000000',
     physics: {
         default: 'arcade',
         arcade: {
-            debug: false,
-            gravity: {
-                x: 0,
-                y: 0
-            }
+            gravity: { y: 0 },
+            debug: false
         }
     },
-    width: 1440,
-    height: 900,
-    scene: [Load, Platformer]
-}
-
-var cursors;
-const SCALE = 2.0;
-var my = {sprite: {}, text: {}, vfx: {}};
+    scene: [TitleScene, GameScene, GameOverScene]
+};
 
 const game = new Phaser.Game(config);
