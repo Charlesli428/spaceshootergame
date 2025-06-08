@@ -8,6 +8,7 @@ class GameScene extends Phaser.Scene {
         this.load.image('player', 'assets/images/mainship.png');
         this.load.image('bullet', 'assets/images/player_laser.png');
         this.load.image('laser', 'assets/images/enemy_laser.png');
+        this.load.image('safemarker', 'assets/images/spaceBuilding_015.png');
     }
 
     create() {
@@ -30,7 +31,9 @@ class GameScene extends Phaser.Scene {
             this.scale.height,
             'background'
         ).setOrigin(0).setScrollFactor(0);
-        this.player = this.add.sprite(400, 630, 'player').setScale(0.1);
+        this.player = this.add.sprite(400, 630, 'player').setScale(0.07);
+        this.safemarker = this.add.sprite(1350, 50, 'safemarker').setScale(0.5);
+        this.safemarker = this.add.sprite(250, 50, 'safemarker').setScale(0.5);
         /*this.add.text(this.scale.width / 2, 50, 'Game Running...', {
             fontSize: '24px',
             fill: '#ffffff'
@@ -43,7 +46,7 @@ class GameScene extends Phaser.Scene {
 
     update() {
         this.bg.tilePositionY -= 1; // scrolling speed
-        this.player.x = Phaser.Math.Clamp(this.player.x, 0, 1400);
+        this.player.x = Phaser.Math.Clamp(this.player.x, 0, 1600);
         this.keys = this.input.keyboard.addKeys({
             left: 'A',
             right: 'D',
@@ -56,7 +59,7 @@ class GameScene extends Phaser.Scene {
             this.player.x += 2.6;
         }
         if (Phaser.Input.Keyboard.JustDown(this.keys.shoot) && this.bulletCooldown === 0) {
-            const bullet = this.add.sprite(this.player.x, this.player.y - 30, 'bullet').setScale(0.1);
+            const bullet = this.add.sprite(this.player.x, this.player.y - 30, 'bullet').setScale(0.07);
             this.bullets.push(bullet);
             this.bulletCooldown = this.bulletCooldownDelay;
         }
