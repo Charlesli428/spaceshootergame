@@ -8,58 +8,65 @@ class GameScene extends Phaser.Scene {
     this.load.image('player', 'assets/images/mainship.png');
     this.load.image('bullet', 'assets/images/player_laser.png');
     this.load.image('laser', 'assets/images/enemy_laser.png');
-        this.load.image('safemarker', 'assets/images/spaceBuilding_015.png');
+    this.load.image('safemarker', 'assets/images/spaceBuilding_015.png');
     this.load.image('enemyBee', 'assets/images/galaga_enemy_bee.png');
     this.load.image('enemyBossRed', 'assets/images/galaga_enemy_boss_red.png');
     this.load.audio('firing', 'assets/sfx/firing.mp3');
     this.load.image('explosion', 'assets/images/explosion.png');
     this.load.audio('explosionSound', 'assets/sfx/kill.mp3');
+    this.load.image('enemyBossPurple', 'assets/images/galaga_enemy_boss_purple.png');
   }
 
 spawnWave(stage) {
-  this.enemies.clear(true, true); // Clear old enemies
+const formation = [
+  { type: 'enemyBossPurple', count: 4, yOffset: 0 },
+  { type: 'enemyBossRed', count: 8, yOffset: 60 },
+  { type: 'enemyBee', count: 8, yOffset: 120 },
+  { type: 'enemyBee', count: 8, yOffset: 180 },
+];
 
-  const cols = 8;
-  const spacingX = 80;
-  const offsetX = 100;
+const centerX = this.scale.width / 2;
+const spacingX = 80;
 
-  const formations = ['v', 'wave', 'zigzag'];
-  const formation = formations[Phaser.Math.Between(0, formations.length - 1)];
+formation.forEach((row, rowIndex) => {
+  const startX = centerX - ((row.count - 1) * spacingX) / 2;
+  const y = 100 + row.yOffset;
 
-  for (let row = 0; row < 4; row++) {
-    for (let col = 0; col < cols; col++) {
-      const x = offsetX + col * spacingX;
-      let y;
+  for (let i = 0; i < row.count; i++) {
+    const finalX = startX + i * spacingX;
+    const spawnX = Phaser.Math.Between(-100, this.scale.width + 100); // enter from sides
+    const spawnY = -Phaser.Math.Between(100, 300); // fly in from above
 
-      switch (formation) {
-        case 'v':
-          y = 100 + row * 50 + Math.abs(4 - col) * 10; // V shape
-          break;
-        case 'wave':
-          y = 100 + row * 50 + Math.sin(col / 2) * 20; // sine wave
-          break;
-        case 'zigzag':
-          y = 100 + row * 50 + (col % 2 === 0 ? 0 : 20); // staggered zigzag
-          break;
+    const enemy = this.enemies.create(spawnX, spawnY, row.type)
+      .setScale(0.06)
+      .setOrigin(0.5);
+
+    enemy.body.setSize(enemy.width * 0.6, enemy.height * 0.6, true);
+    enemy.originalY = y;
+    enemy.finalX = finalX;
+    enemy.finalY = y;
+    enemy.isDiving = false;
+
+    this.tweens.add({
+      targets: enemy,
+      x: finalX,
+      y: y,
+      ease: 'Sine.easeInOut',
+      delay: (i + rowIndex * 5) * 400,
+      duration: 2000,
+      onComplete: () => {
+        enemy.arrived = true;
+        enemy.y += Math.sin(enemy.x / 50) * 0.3; //wave during approach
       }
-
-      const type = (row === 0) ? 'enemyBossRed' : 'enemyBee';
-      const enemy = this.enemies.create(x, y, type)
-        .setScale(0.06)
-        .setOrigin(0.5);
-
-      enemy.body.setSize(enemy.width * 0.6, enemy.height * 0.6, true);
-
-      enemy.originalY = y;
-      enemy.isDiving = false;
-    }
+    });
   }
-
-  // increase drop speed with stage
+});
+  
   this.enemyStepDown = 10 + stage * 3;
   this.enemySpeed = 20 + stage;
   this.enemyMoveDelay = Math.max(20 - stage * 2, 10);
 }
+
 
 
   showStageScreen(stageNumber) {
@@ -113,24 +120,7 @@ spawnWave(stage) {
     this.enemyMoveTimer = 0;
     this.enemyMoveDelay = 30; // lower = faster movement
 
-    const rows = 4;
-    const cols = 8;
-    const offsetX = 100;
-    const offsetY = 100;
-    const spacingX = 80;
-    const spacingY = 70;
 
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const x = offsetX + col * spacingX;
-        const y = offsetY + row * spacingY;
-        const type = (row === 0) ? 'enemyBossRed' : 'enemyBee';
-        const enemy = this.enemies.create(x, y, type)
-          .setScale(0.06)
-          .setOrigin(0.5);
-        enemy.originalY = y;
-      }
-    }
     // Initialize enemy bullets group
     this.enemyBullets = this.physics.add.group();
     
@@ -179,6 +169,26 @@ spawnWave(stage) {
     this.scene.start('GameOverScene');
         });
     });
+
+    // player hit by enemy laser
+    this.physics.add.overlap(this.player, this.enemyBullets, (player, bullet) => {
+        if (this.isGameOver) return;
+
+    this.isGameOver = true;
+    bullet.destroy();
+    this.explosionSound.play();
+
+    const explosion = this.add.sprite(this.player.x, this.player.y, 'explosion').setScale(0.15);
+    this.player.setVisible(false);
+
+    this.physics.pause();
+    this.cameras.main.fadeOut(1000);
+
+    this.time.delayedCall(1500, () => {
+        this.scene.start('GameOverScene');
+    });
+    });
+
 
     // Stage screen
     this.stageText = this.add.text(this.scale.width / 2, this.scale.height / 2, '', {
@@ -236,58 +246,62 @@ spawnWave(stage) {
     this.enemyMoveDelay = Phaser.Math.Clamp(40 - remaining, 1, 10);
 
     this.enemyMoveTimer++;
-    if (this.enemyMoveTimer >= this.enemyMoveDelay) {
-      let shouldReverse = false;
+if (this.enemyMoveTimer >= this.enemyMoveDelay) {
+  let shouldReverse = false;
 
-      this.enemies.children.each(enemy => {
-        enemy.x += this.enemyDirection * 8;
+  if (this.enemies.getChildren().every(e => e.arrived && !e.isDiving)) {
+    this.enemies.children.each(enemy => {
+      enemy.x += this.enemyDirection * 1.5;
 
-        // Add diving attack logic
-if (!enemy.isDiving && Math.random() < 0.0025 * this.currentStage && enemy.y < 300) {
-  enemy.isDiving = true;
+      // Diving attack logic
+if (
+  !enemy.isDiving &&
+  enemy.arrived &&
+  Math.random() < (enemy.texture.key === "enemyBossPurple" ? 0.0002 : 0.001)
+)
+ {
+        enemy.isDiving = true;
 
-  const targetX = this.player.x + Phaser.Math.Between(-50, 50);
-  const targetY = this.scale.height + 100;
+        const targetX = this.player.x + Phaser.Math.Between(-50, 50);
+        const targetY = this.scale.height + 100;
 
-  this.physics.moveTo(enemy, targetX, targetY, 200);
+        this.physics.moveTo(enemy, targetX, targetY, 200);
 
-  // Enemy fires while diving
-  this.time.delayedCall(Phaser.Math.Between(300, 700), () => {
-    if (enemy.active) {
-      this.enemyBullets.create(enemy.x, enemy.y + 20, 'laser')
-        .setScale(0.05)
-        .setVelocityY(300);
-    }
-  });
-}
-
-// Reset after diving off-screen
-if (enemy.isDiving && enemy.y > this.scale.height) {
-  enemy.isDiving = false;
-  enemy.setVelocity(0);
-  enemy.y = enemy.originalY;
-}
-
-        if (enemy.y > 650) { // Reset after dive
-          enemy.setVelocityY(0);
-          enemy.setVelocityX(0);
-          enemy.y = enemy.originalY;
-        }
-
-        if (enemy.x <= this.enemyBounds.left || enemy.x >= this.enemyBounds.right) {
-          shouldReverse = true;
-        }
-      });
-
-      if (shouldReverse) {
-        this.enemyDirection *= -1;
-        this.enemies.children.each(enemy => {
-          enemy.y += this.enemyStepDown;
+        // Enemy fires during dive
+        this.time.delayedCall(Phaser.Math.Between(300, 700), () => {
+          if (enemy.active) {
+            this.enemyBullets.create(enemy.x, enemy.y + 20, 'laser')
+              .setScale(0.05)
+              .setVelocityY(300);
+          }
         });
       }
 
-      this.enemyMoveTimer = 0;
-    }
+      if (enemy.isDiving && enemy.y > this.scale.height) {
+        enemy.isDiving = false;
+        enemy.setVelocity(0);
+        enemy.y = enemy.originalY;
+      }
+
+      if (enemy.y > 650) {
+        enemy.setVelocityY(0);
+        enemy.setVelocityX(0);
+        enemy.y = enemy.originalY;
+      }
+
+      if (enemy.x <= this.enemyBounds.left || enemy.x >= this.enemyBounds.right) {
+        shouldReverse = true;
+      }
+    });
+
+if (shouldReverse) {
+  this.enemyDirection *= -1;
+}
+
+  }
+
+  this.enemyMoveTimer = 0;
+}
 
     // Cooldown decrement
     if (this.bulletCooldown > 0) {
@@ -301,13 +315,13 @@ if (enemy.isDiving && enemy.y > this.scale.height) {
     });
 
     // Add enemy bullet firing logic
-    this.enemies.children.each(enemy => {
-      if (Math.random() < 0.005 * this.currentStage && enemy.y > 300) { // 0.5% chance per stage level
-        this.enemyBullets.create(enemy.x, enemy.y + 20, 'laser')
-          .setScale(0.05)
-          .setVelocityY(350);
-      }
-    });
+this.enemies.children.each(enemy => {
+  if (enemy.arrived && !enemy.isDiving && Math.random() < 0.0015 * this.currentStage) {
+    this.enemyBullets.create(enemy.x, enemy.y + 20, 'laser')
+      .setScale(0.05)
+      .setVelocityY(350);
+  }
+});
 
     // Move enemy bullets & destroy offscreen
     this.enemyBullets.children.each(bullet => {
