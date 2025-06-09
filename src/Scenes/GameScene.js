@@ -25,6 +25,8 @@ const formation = [
   { type: 'enemyBee', count: 8, yOffset: 180 },
 ];
 
+
+
 const centerX = this.scale.width / 2;
 const spacingX = 80;
 
@@ -67,6 +69,113 @@ formation.forEach((row, rowIndex) => {
   this.enemyMoveDelay = Math.max(20 - stage * 2, 10);
 }
 
+spawnBoss() {
+  // clear out any leftover enemies
+  this.enemies.clear(true, true);
+
+  this.boss = this.enemies.create(
+    this.scale.width/2, 100, 'enemyBossPurple'
+  )
+    .setScale(0.15)
+    .setImmovable(true)
+    .setOrigin(0.5);
+  const boss = this.boss;
+  // give it multi‐hit health
+  boss.health = 20;
+  this.bossMaxHP = 20;
+  //next for health bar
+  this.bossCurrentHP = this.bossMaxHP;
+
+  const offsetY = boss.displayHeight / 2 + 100;
+  this.bossHealthBarBg = this.add
+    .rectangle(boss.x, boss.y + offsetY, 80, 10, 0x444444)
+    .setOrigin(0.5)
+    .setDepth(10);
+  this.bossHealthBar = this.add
+    .rectangle(boss.x, boss.y + offsetY, 80, 10, 0xff0000)
+    .setOrigin(0.5)
+    .setDepth(11);
+
+  this.bossHealthBar.setDepth(10);
+  this.bossHealthBarBg.setDepth(9);
+  boss.arrived = true;    // skip tween logic
+  boss.isDiving = false;  // skip dive logic
+  
+  // boss side-to-side movement
+  this.bossBounce = this.time.addEvent({
+    delay: 30, loop: true,
+    callback: () => {
+      if (!boss.body) return;
+      if (boss.x <= 250 || boss.x >= this.scale.width - 250) {
+        boss.setVelocityX(-boss.body.velocity.x);
+      }
+    }
+  });
+  this.bossFire = this.time.addEvent({
+    delay: 800,  
+    loop: true,
+    callback: () => {
+      if (!boss.active || !this.player.active) return;
+
+      const dx = this.player.x - boss.x;
+      const dy = this.player.y - boss.y;
+      const angle = Math.atan2(dy, dx);
+      const speed = 350;
+
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+
+      this.enemyBullets.create(boss.x, boss.y + 20, 'laser')
+        .setScale(0.05)
+        .setVelocity(vx, vy);
+    }
+  });
+  boss.setVelocityX(200);
+
+  // mark that we have a boss active
+  this.bossActive = true;
+}
+killBoss() {
+  // 1) Disable boss flag so no update logic tries to respawn it
+  this.bossActive = false;
+  if (this.bossHealthBar) this.bossHealthBar.destroy();
+  if (this.bossHealthBarBg) this.bossHealthBarBg.destroy();
+  // 2) Stop the boss’s timers
+  if (this.bossFire) {
+    this.bossFire.remove();
+    this.bossFire = null;
+  }
+  if (this.bossBounce) {
+    this.bossBounce.remove();
+    this.bossBounce = null;
+  }
+
+  // 3) Explosion effect
+  const explosion = this.add
+    .sprite(this.boss.x, this.boss.y, 'explosion')
+    .setScale(0.2);
+  this.explosionSound.play();
+  this.boss.destroy();
+  this.boss = null;
+
+  this.time.delayedCall(300, () => explosion.destroy());
+
+  // 4) Award points
+  this.updateScore(1000);
+
+  // 5) Advance to the next stage after 1 second
+  this.time.delayedCall(1000, () => {
+    console.log('>> killBoss delayedCall triggered! currentStage was', this.currentStage);
+    this.currentStage++;
+    this.showStageScreen(this.currentStage);
+    if (this.currentStage % 3 === 0) {
+      this.spawnBoss();
+    } else {
+      this.spawnWave(this.currentStage);
+    }
+    this.waveCleared = false;
+  });
+}
 
 
   showStageScreen(stageNumber) {
@@ -81,7 +190,12 @@ formation.forEach((row, rowIndex) => {
   }
 
   create() {
-
+    this.input.keyboard.on('keydown-THREE', () => {
+      this.currentStage = 3;
+      this.waveCleared = false;
+      this.showStageScreen(3);
+      this.spawnBoss();    // since 3 % 3 === 0
+    });
     // game over
     this.isGameOver = false;
 
@@ -93,7 +207,7 @@ formation.forEach((row, rowIndex) => {
       returnToTitle: 'T',
       play: 'P'
     });
-
+    
     // Audio
     this.fireSound = this.sound.add('firing');
     this.explosionSound = this.sound.add('explosionSound');
@@ -119,7 +233,9 @@ formation.forEach((row, rowIndex) => {
     this.enemyBounds = { left: 50, right: 750 }; // world limits
     this.enemyMoveTimer = 0;
     this.enemyMoveDelay = 30; // lower = faster movement
-
+    this.boss = null;
+    this.bossHP = 0;
+    this.bossActive = false;
 
     // Initialize enemy bullets group
     this.enemyBullets = this.physics.add.group();
@@ -127,21 +243,44 @@ formation.forEach((row, rowIndex) => {
     // Bullet vs Enemy collision
     this.physics.add.overlap(this.bullets, this.enemies, (bullet, enemy) => {
       bullet.destroy();
+
+      // if it’s the boss, decrement its health first
+      if (enemy.texture.key === 'enemyBossPurple') {
+        enemy.health--;
+        this.bossCurrentHP--;
+        if (this.bossHealthBar) {
+          this.bossHealthBar.width = 80 * (this.bossCurrentHP / this.bossMaxHP);
+        }
+
+        if (enemy.health > 0) {
+          return;
+        }
+        if (this.bossHealthBarBg) {
+          this.bossHealthBarBg.destroy();
+          this.bossHealthBarBg = null;
+        }
+        if (this.bossHealthBar) {
+          this.bossHealthBar.destroy();
+          this.bossHealthBar = null;
+        }
+          this.bossActive = false;
+        }
+
+      // destroy and play explosion
       enemy.destroy();
-
-      // Explosion visual
-      const explosion = this.add.sprite(enemy.x, enemy.y, 'explosion').setScale(0.1);
-      this.time.delayedCall(200, () => explosion.destroy());
-
-      // Explosion sound
+      const ex = this.add.sprite(enemy.x, enemy.y, 'explosion')
+        .setScale(enemy.texture.key === 'enemyBossPurple' ? 0.2 : 0.1);
+      this.time.delayedCall(200, () => ex.destroy());
       this.explosionSound.play();
 
-      // Add points
-      if (enemy.texture.key === 'enemyBossRed') {
-        this.updateScore(150);
-      } else {
-        this.updateScore(80);
-      }
+      // award points
+      const pts = enemy.texture.key === 'enemyBossPurple'
+        ? 1000
+        : (enemy.texture.key === 'enemyBossRed' ? 150 : 80);
+      this.updateScore(pts);
+
+      // mark wave cleared so update() can advance
+      this.waveCleared = false; 
     });
 
     //game over
@@ -185,7 +324,7 @@ formation.forEach((row, rowIndex) => {
     this.cameras.main.fadeOut(1000);
 
     this.time.delayedCall(1500, () => {
-        this.scene.start('GameOverScene');
+        this.scene.start('GameOverScene'); 
     });
     });
 
@@ -328,7 +467,7 @@ this.enemies.children.each(enemy => {
       if (bullet.y > this.scale.height) bullet.destroy();
     });
 
-    if (this.enemies.countActive(true) === 0 && !this.waveCleared) {
+/*    if (this.enemies.countActive(true) === 0 && !this.waveCleared) {
       this.waveCleared = true;
 
       this.time.delayedCall(1000, () => {
@@ -337,6 +476,31 @@ this.enemies.children.each(enemy => {
         this.spawnWave(this.currentStage);
         this.waveCleared = false;
       });
+    }
+  } */
+    if (this.enemies.countActive(true) === 0 && !this.waveCleared) {
+      this.waveCleared = true;
+
+      // wait 1 second, then bump the stage and spawn the correct thing
+      this.time.delayedCall(1000, () => {
+        this.currentStage++;
+        this.showStageScreen(this.currentStage);
+
+        if (this.currentStage % 3 === 0) {
+          this.spawnBoss();
+        } else {
+          this.spawnWave(this.currentStage);
+        }
+
+        this.waveCleared = false;
+      });
+    }
+    if (this.boss && this.bossHealthBar) {
+      const offsetY = this.boss.displayHeight/2 + 10;
+      const x = this.boss.x;
+      const y = this.boss.y + offsetY;
+      this.bossHealthBarBg.setPosition(x, y);
+      this.bossHealthBar   .setPosition(x, y);
     }
   }
 
