@@ -2,8 +2,8 @@ class GameScene extends Phaser.Scene {
   constructor() {
     super({ key: 'GameScene' });
   }
-
   preload() {
+    this.load.image('capturedShip', 'assets/images/capturedShip.png');
     this.load.image('background', 'assets/images/background_tiled_vertical.png');
     this.load.image('player', 'assets/images/mainship.png');
     this.load.image('bullet', 'assets/images/player_laser.png');
@@ -11,172 +11,212 @@ class GameScene extends Phaser.Scene {
     this.load.image('safemarker', 'assets/images/spaceBuilding_015.png');
     this.load.image('enemyBee', 'assets/images/galaga_enemy_bee.png');
     this.load.image('enemyBossRed', 'assets/images/galaga_enemy_boss_red.png');
-    this.load.audio('firing', 'assets/sfx/firing.mp3');
-    this.load.image('explosion', 'assets/images/explosion.png');
-    this.load.audio('explosionSound', 'assets/sfx/kill.mp3');
     this.load.image('enemyBossPurple', 'assets/images/galaga_enemy_boss_purple.png');
+    this.load.image('explosion', 'assets/images/explosion.png');
+    this.load.image('tractorBeam', 'assets/images/tractor_beam.png');
+
+    this.load.audio('firing', 'assets/sfx/firing.mp3');
+    this.load.audio('beingCaptured', 'assets/sfx/captured.mp3');
+    this.load.audio('explosionSound', 'assets/sfx/kill.mp3');
+    this.load.audio('bossEntrance', 'assets/sfx/bossEntrance.mp3');
+    this.load.audio('beamShot', 'assets/sfx/beamShot.mp3');
+    this.load.audio('beamCapture', 'assets/sfx/beamCapture.mp3');
+    this.load.audio('bossDeath', 'assets/sfx/bossDeath.mp3');
+    this.load.audio('stageClear', 'assets/sfx/challenge_clear.mp3');
+    this.load.audio('miss', 'assets/sfx/miss.mp3');
+    this.load.audio('mistakeMusic', 'assets/sfx/mistake_music.mp3');
+    this.load.audio('ambientLoop', 'assets/sfx/ambient_loop.mp3');
+    this.load.audio('nameEntryOthers', 'assets/sfx/name_entry_others.mp3');
+    this.load.audio('stageFlag', 'assets/sfx/stage_flag.mp3');
   }
 
-spawnWave(stage) {
-const formation = [
-  { type: 'enemyBossPurple', count: 4, yOffset: 0 },
-  { type: 'enemyBossRed', count: 8, yOffset: 60 },
-  { type: 'enemyBee', count: 8, yOffset: 120 },
-  { type: 'enemyBee', count: 8, yOffset: 180 },
-];
+  spawnWave(stage) {
+    const formation = [
+      { type: 'enemyBossPurple', count: 4, yOffset: 0 },
+      { type: 'enemyBossRed', count: 8, yOffset: 60 },
+      { type: 'enemyBee', count: 8, yOffset: 120 },
+      { type: 'enemyBee', count: 8, yOffset: 180 }
+    ];
+
+    const centerX = this.scale.width / 2;
+    const spacingX = 100;
+    const maxY = this.scale.height / 2; // Top third boundary (e.g., 266 for 800px height)
+
+    formation.forEach((row, rowIndex) => {
+      const startX = centerX - ((row.count - 1) * spacingX) / 2;
+      const y = Math.min(50 + row.yOffset, maxY - 30); // Keep formation within top third
+
+      for (let i = 0; i < row.count; i++) {
+        const finalX = startX + i * spacingX + Phaser.Math.Between(-10, 10); // small random offset
+        const spawnX = Phaser.Math.Between(-100, this.scale.width + 100);
+        const spawnY = -Phaser.Math.Between(100, 300);
+
+        const enemy = this.enemies.create(spawnX, spawnY, row.type)
+          .setScale(0.06)
+          .setOrigin(0.5);
+
+        enemy.body.setSize(enemy.width * 0.6, enemy.height * 0.6, true);
+        enemy.finalX = finalX;
+        enemy.finalY = y;
+        enemy.arrived = false;
+        enemy.isDiving = false;
+        enemy.health = (row.type === 'enemyBossPurple') ? 3 : 1;
 
 
+this.tweens.add({
+          targets: enemy,
+          x: finalX,
+          y: y,
+          ease: 'Linear',
+          delay: (i + rowIndex * 5) * 400,
+          duration: 1000,
+          onComplete: () => { enemy.arrived = true; }
+        });
 
-const centerX = this.scale.width / 2;
-const spacingX = 80;
+      }
 
-formation.forEach((row, rowIndex) => {
-  const startX = centerX - ((row.count - 1) * spacingX) / 2;
-  const y = 100 + row.yOffset;
+    });
 
-  for (let i = 0; i < row.count; i++) {
-    const finalX = startX + i * spacingX;
-    const spawnX = Phaser.Math.Between(-100, this.scale.width + 100); // enter from sides
-    const spawnY = -Phaser.Math.Between(100, 300); // fly in from above
+    this.enemyStepDown = 10 + stage * 3;
+    this.enemySpeed = 20 + stage;
+    this.enemyMoveDelay = Math.max(20 - stage * 2, 10);
+    this.formationCenterX = centerX;
+    this.formationCenterY = maxY / 2; // Center formation in top third (e.g., y=133)
+    this.formationTimer = 0;
+    this.formationMoveInterval = 5000; // Reposition every 5 seconds
+  }
 
-    const enemy = this.enemies.create(spawnX, spawnY, row.type)
-      .setScale(0.06)
+  spawnBoss() {
+    this.enemies.clear(true, true);
+
+    const maxY = this.scale.height / 3; // Top third boundary
+    this.boss = this.enemies.create(this.scale.width / 2, 100, 'enemyBossPurple')
+      .setScale(0.15)
+      .setImmovable(true)
       .setOrigin(0.5);
+      
+      this.sfx.bossEntrance.play({ volume: 0.6 }); 
+    
+    const boss = this.boss;
+    boss.health = 20;
+    this.bossMaxHP = 20;
+    this.bossCurrentHP = this.bossMaxHP;
 
-    enemy.body.setSize(enemy.width * 0.6, enemy.height * 0.6, true);
-    enemy.originalY = y;
-    enemy.finalX = finalX;
-    enemy.finalY = y;
-    enemy.isDiving = false;
+    const offsetY = boss.displayHeight / 2 + 20;
+    this.bossHealthBarBg = this.add
+      .rectangle(boss.x, boss.y + offsetY, 80, 10, 0x444444)
+      .setOrigin(0.5)
+      .setDepth(9);
+    this.bossHealthBar = this.add
+      .rectangle(boss.x, boss.y + offsetY, 80, 10, 0xff0000)
+      .setOrigin(0.5)
+      .setDepth(10);
+
+    boss.arrived = true;
+    boss.isDiving = false;
+    boss.setVelocityX(Phaser.Math.Between(60, 100));
+
+    this.bossBounce = this.time.addEvent({
+      delay: 30,
+      loop: true,
+      callback: () => {
+        if (!boss.body) return;
+        if (boss.x <= 250 || boss.x >= this.scale.width - 250) {
+          boss.setVelocityX(-boss.body.velocity.x);
+        }
+        // Keep boss in top third
+        if (boss.y > maxY) {
+          boss.y = maxY;
+          boss.setVelocityY(0);
+        }
+      }
+    });
+
+    this.bossFire = this.time.addEvent({
+      delay: 800,
+      loop: true,
+      callback: () => {
+        if (!boss.active || !this.player.active) return;
+        const dx = this.player.x - boss.x;
+        const dy = this.player.y - boss.y;
+        const angle = Math.atan2(dy, dx);
+        const speed = 350;
+        this.enemyBullets.create(boss.x, boss.y + 20, 'laser')
+          .setScale(0.05)
+          .setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+      }
+    });
+// Tractor beam
+this.bossTractorBeam = this.time.addEvent({
+  delay: 5000, // Activate every 5 seconds
+  loop: true,
+  callback: () => {
+    if (!boss.active || !this.player.active || this.isInvincible) return;
+
+    const oldVelocityX = boss.body.velocity.x;  // 1. Store old speed
+    boss.setVelocityX(0);                       // 2. Stop boss movement
+
+    // FIX: use `this.bossBeam`, not undefined `beam`
+    this.bossBeam = this.add.image(boss.x, boss.y + 90, 'tractorBeam')
+      .setScale(0.35, 0.8)
+      .setOrigin(0.5, 0)
+      .setAlpha(0)
+      .setDepth(5);
 
     this.tweens.add({
-      targets: enemy,
-      x: finalX,
-      y: y,
-      ease: 'Sine.easeInOut',
-      delay: (i + rowIndex * 5) * 400,
-      duration: 2000,
-      onComplete: () => {
-        enemy.arrived = true;
-        enemy.y += Math.sin(enemy.x / 50) * 0.3; //wave during approach
+      targets: this.bossBeam, // FIX: reference correctly
+      alpha: 1,
+      duration: 600,
+      ease: 'Linear'
+    });
+
+    const pullDuration = 2000;
+    const pullForce = 100;
+
+    const pullInterval = this.time.addEvent({
+      delay: 100,
+      repeat: pullDuration / 100 - 1,
+      callback: () => {
+        if (!boss.active || !this.player.active || this.isInvincible) return;
+
+        // Step 2: Kill player if beam and player intersect
+        if (
+          this.bossBeam &&
+          Phaser.Geom.Intersects.RectangleToRectangle(
+            this.bossBeam.getBounds(),
+            this.player.getBounds()
+          )
+        ) {
+            this.sfx.beamShot.play({ volume: 0.5 }); 
+            this.handlePlayerDeath(false);
+            return;
+        }
+
+        // Pull toward boss if within range
+        const distance = Phaser.Math.Distance.Between(boss.x, boss.y, this.player.x, this.player.y);
+        if (distance < 400) {
+          const dx = boss.x - this.player.x;
+          const dy = boss.y - this.player.y;
+          const angle = Math.atan2(dy, dx);
+          this.player.body.velocity.x += Math.cos(angle) * (pullForce / 10);
+          this.player.body.velocity.y += Math.sin(angle) * (pullForce / 10);
+        }
       }
+    });
+
+    // After pull finishes, destroy beam and restore boss movement
+    this.time.delayedCall(pullDuration, () => {
+      if (this.bossBeam) {
+        this.bossBeam.destroy();
+        this.bossBeam = null;
+      }
+      boss.setVelocityX(oldVelocityX);
     });
   }
 });
-  
-  this.enemyStepDown = 10 + stage * 3;
-  this.enemySpeed = 20 + stage;
-  this.enemyMoveDelay = Math.max(20 - stage * 2, 10);
-}
 
-spawnBoss() {
-  // clear out any leftover enemies
-  this.enemies.clear(true, true);
-
-  this.boss = this.enemies.create(
-    this.scale.width/2, 100, 'enemyBossPurple'
-  )
-    .setScale(0.15)
-    .setImmovable(true)
-    .setOrigin(0.5);
-  const boss = this.boss;
-  // give it multi‐hit health
-  boss.health = 20;
-  this.bossMaxHP = 20;
-  //next for health bar
-  this.bossCurrentHP = this.bossMaxHP;
-
-  const offsetY = boss.displayHeight / 2 + 100;
-  this.bossHealthBarBg = this.add
-    .rectangle(boss.x, boss.y + offsetY, 80, 10, 0x444444)
-    .setOrigin(0.5)
-    .setDepth(10);
-  this.bossHealthBar = this.add
-    .rectangle(boss.x, boss.y + offsetY, 80, 10, 0xff0000)
-    .setOrigin(0.5)
-    .setDepth(11);
-
-  this.bossHealthBar.setDepth(10);
-  this.bossHealthBarBg.setDepth(9);
-  boss.arrived = true;    // skip tween logic
-  boss.isDiving = false;  // skip dive logic
-  
-  // boss side-to-side movement
-  this.bossBounce = this.time.addEvent({
-    delay: 30, loop: true,
-    callback: () => {
-      if (!boss.body) return;
-      if (boss.x <= 250 || boss.x >= this.scale.width - 250) {
-        boss.setVelocityX(-boss.body.velocity.x);
-      }
-    }
-  });
-  this.bossFire = this.time.addEvent({
-    delay: 800,  
-    loop: true,
-    callback: () => {
-      if (!boss.active || !this.player.active) return;
-
-      const dx = this.player.x - boss.x;
-      const dy = this.player.y - boss.y;
-      const angle = Math.atan2(dy, dx);
-      const speed = 350;
-
-      const vx = Math.cos(angle) * speed;
-      const vy = Math.sin(angle) * speed;
-
-      this.enemyBullets.create(boss.x, boss.y + 20, 'laser')
-        .setScale(0.05)
-        .setVelocity(vx, vy);
-    }
-  });
-  boss.setVelocityX(200);
-
-  // mark that we have a boss active
-  this.bossActive = true;
-}
-killBoss() {
-  // 1) Disable boss flag so no update logic tries to respawn it
-  this.bossActive = false;
-  if (this.bossHealthBar) this.bossHealthBar.destroy();
-  if (this.bossHealthBarBg) this.bossHealthBarBg.destroy();
-  // 2) Stop the boss’s timers
-  if (this.bossFire) {
-    this.bossFire.remove();
-    this.bossFire = null;
+this.bossActive = true;
   }
-  if (this.bossBounce) {
-    this.bossBounce.remove();
-    this.bossBounce = null;
-  }
-
-  // 3) Explosion effect
-  const explosion = this.add
-    .sprite(this.boss.x, this.boss.y, 'explosion')
-    .setScale(0.2);
-  this.explosionSound.play();
-  this.boss.destroy();
-  this.boss = null;
-
-  this.time.delayedCall(300, () => explosion.destroy());
-
-  // 4) Award points
-  this.updateScore(1000);
-
-  // 5) Advance to the next stage after 1 second
-  this.time.delayedCall(1000, () => {
-    console.log('>> killBoss delayedCall triggered! currentStage was', this.currentStage);
-    this.currentStage++;
-    this.showStageScreen(this.currentStage);
-    if (this.currentStage % 3 === 0) {
-      this.spawnBoss();
-    } else {
-      this.spawnWave(this.currentStage);
-    }
-    this.waveCleared = false;
-  });
-}
-
 
   showStageScreen(stageNumber) {
     this.stageText.setText(`STAGE ${stageNumber}`);
@@ -190,16 +230,80 @@ killBoss() {
   }
 
   create() {
+    this.isGameOver = false;
+    this.score = 0;
+    this.highScore = 0;
+    this.currentStage = 1;
+    this.waveCleared = false;
+    this.bossActive = false;
+    this.lives = 3;
+    this.isInvincible = false;
+    this.isRespawning = false;
+    this.maxActiveDivers = 3;
+    this.diveDelay = 3000;
+    this.sfx = {
+        bossEntrance: this.sound.add('bossEntrance'),
+        beamShot: this.sound.add('beamShot'),
+        beamCapture: this.sound.add('beamCapture'),
+        bossDeath: this.sound.add('bossDeath')
+    };
+    this.purpleDiveActive = false;
+    this.sfx.beingCaptured = this.sound.add('beingCaptured');
+
+
+
+    this.lifeIcons = [];
+
+    const iconSpacing = 40;
+    const iconYOffset = 20; // 20px from bottom
+    const iconXOffset = 20; // 20px from left
+
+    for (let i = 0; i < this.lives - 1; i++) {
+      const icon = this.add.image(iconXOffset + i * iconSpacing, this.scale.height - iconYOffset, 'player')
+        .setOrigin(0, 1)
+        .setScale(0.035)
+        .setAlpha(0.8)
+        .setScrollFactor(0)
+        .setDepth(20);
+      this.lifeIcons.push(icon);
+    }
+
     this.input.keyboard.on('keydown-THREE', () => {
       this.currentStage = 3;
       this.waveCleared = false;
-      this.showStageScreen(3);
-      this.spawnBoss();    // since 3 % 3 === 0
-    });
-    // game over
-    this.isGameOver = false;
+      this.bossActive = false;
 
-    // Controls
+      this.enemies.clear(true, true);
+      this.enemyBullets.clear(true, true);
+
+      if (this.bossFire) {
+        this.bossFire.remove();
+        this.bossFire = null;
+      }
+      if (this.bossBounce) {
+        this.bossBounce.remove();
+        this.bossBounce = null;
+      }
+      if (this.bossHealthBar) {
+        this.bossHealthBar.destroy();
+        this.bossHealthBar = null;
+      }
+      if (this.bossHealthBarBg) {
+        this.bossHealthBarBg.destroy();
+        this.bossHealthBarBg = null;
+      }
+      if (this.boss) {
+        this.sfx.bossDeath.play({ volume: 0.6 });
+        this.boss.destroy();
+        this.boss = null;
+      }
+
+      this.showStageScreen(3);
+      this.time.delayedCall(2000, () => {
+        this.spawnBoss();
+      });
+    });
+
     this.keys = this.input.keyboard.addKeys({
       left: 'A',
       right: 'D',
@@ -207,142 +311,115 @@ killBoss() {
       returnToTitle: 'T',
       play: 'P'
     });
-    
-    // Audio
+
     this.fireSound = this.sound.add('firing');
     this.explosionSound = this.sound.add('explosionSound');
 
-    // Background
     this.bg = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'background')
       .setOrigin(0)
       .setScrollFactor(0);
 
-    // Player
     this.player = this.physics.add.sprite(400, 630, 'player').setScale(0.05);
 
-    // Bullets
     this.bullets = this.physics.add.group();
     this.bulletCooldown = 0;
     this.bulletCooldownDelay = 10;
 
-    // Enemies
     this.enemies = this.physics.add.group();
-    this.enemyDirection = 1; // 1 = right, -1 = left
-    this.enemySpeed = 20; // pixels per update cycle
-    this.enemyStepDown = 10; // pixels to step down when turning
-    this.enemyBounds = { left: 50, right: 750 }; // world limits
+    this.scheduleDiveTimer = this.time.addEvent({
+        delay: this.diveDelay,
+        loop: true,
+        callback: () => this.queueDive()
+    });
+    this.enemyDirection = 1;
+    this.enemySpeed = 20;
+    this.enemyStepDown = 10;
+    this.enemyBounds = { left: 30, right: this.scale.width - 30 };
     this.enemyMoveTimer = 0;
-    this.enemyMoveDelay = 30; // lower = faster movement
-    this.boss = null;
-    this.bossHP = 0;
-    this.bossActive = false;
+    this.enemyMoveDelay = 30;
+    this.formationCenterX = this.scale.width / 2;
+    this.formationCenterY = this.scale.height / 6; // Center in top third
+    this.formationTimer = 0;
+    this.formationMoveInterval = 5000;
 
-    // Initialize enemy bullets group
     this.enemyBullets = this.physics.add.group();
-    
-    // Bullet vs Enemy collision
-    this.physics.add.overlap(this.bullets, this.enemies, (bullet, enemy) => {
-      bullet.destroy();
 
-      // if it’s the boss, decrement its health first
-      if (enemy.texture.key === 'enemyBossPurple') {
-        enemy.health--;
-        this.bossCurrentHP--;
-        if (this.bossHealthBar) {
-          this.bossHealthBar.width = 80 * (this.bossCurrentHP / this.bossMaxHP);
-        }
+this.physics.add.overlap(this.bullets, this.enemies, (bullet, enemy) => {
+  bullet.destroy();
 
-        if (enemy.health > 0) {
-          return;
-        }
-        if (this.bossHealthBarBg) {
-          this.bossHealthBarBg.destroy();
-          this.bossHealthBarBg = null;
-        }
-        if (this.bossHealthBar) {
-          this.bossHealthBar.destroy();
-          this.bossHealthBar = null;
-        }
-          this.bossActive = false;
-        }
+  // Set default health if missing
+  if (typeof enemy.health === 'undefined') {
+    enemy.health = (enemy.texture.key === 'enemyBossPurple') ? 3 :
+                   (enemy.texture.key === 'enemyBossRed') ? 2 : 1;
+  }
 
-      // destroy and play explosion
-      enemy.destroy();
-      const ex = this.add.sprite(enemy.x, enemy.y, 'explosion')
-        .setScale(enemy.texture.key === 'enemyBossPurple' ? 0.2 : 0.1);
-      this.time.delayedCall(200, () => ex.destroy());
-      this.explosionSound.play();
+  enemy.health--;
 
-      // award points
-      const pts = enemy.texture.key === 'enemyBossPurple'
-        ? 1000
-        : (enemy.texture.key === 'enemyBossRed' ? 150 : 80);
-      this.updateScore(pts);
+  const isBoss = enemy.texture.key === 'enemyBossPurple';
+  const isCapturedEnemy = (enemy === this.capturedEnemyShip);
 
-      // mark wave cleared so update() can advance
-      this.waveCleared = false; 
-    });
+  if (isBoss) {
+    this.bossCurrentHP--;
+    if (this.bossHealthBar) {
+      this.bossHealthBar.width = 80 * (this.bossCurrentHP / this.bossMaxHP);
+    }
+  }
 
-    //game over
-    this.isGameOver = false;
+  // Don't destroy if still alive
+  if (enemy.health > 0) return;
 
-    //player hit with bullet
+  // Activate double ship if captured enemy ship is destroyed
+  if (isCapturedEnemy) {
+    this.activateDoubleShip();
+    this.capturedEnemyShip = null;
+  }
+
+  enemy.destroy();
+
+  // Boss UI cleanup
+  if (isBoss) {
+    this.bossActive = false;
+    if (this.bossHealthBarBg) {
+      this.bossHealthBarBg.destroy();
+      this.bossHealthBarBg = null;
+    }
+    if (this.bossHealthBar) {
+      this.bossHealthBar.destroy();
+      this.bossHealthBar = null;
+    }
+  }
+
+  const scale = isBoss ? 0.2 : 0.06;
+  const ex = this.add.sprite(enemy.x, enemy.y, 'explosion').setScale(scale);
+  this.time.delayedCall(200, () => ex.destroy());
+  this.explosionSound.play();
+
+  const points = isBoss ? 1000 :
+                 enemy.texture.key === 'enemyBossRed' ? 150 :
+                 isCapturedEnemy ? 500 : 80;  // Bonus points for captured ship
+  this.updateScore(points);
+
+  this.waveCleared = false;
+});
+
+
     this.physics.add.overlap(this.player, this.enemies, (player, enemy) => {
-        if (this.isGameOver) return;
-
-    this.isGameOver = true;
-    enemy.destroy();
-    this.explosionSound.play();
-
-    // Play explosion and hide player
-    const explosion = this.add.sprite(this.player.x, this.player.y, 'explosion').setScale(0.15);
-    this.explosionSound.play();
-    this.player.setVisible(false);
-
-    // Pause physics and fade out
-    this.physics.pause();
-    this.cameras.main.fadeOut(1000);
-
-    // Delay and then go to GameOverScene
-    this.time.delayedCall(1500, () => {
-    this.scene.start('GameOverScene');
-        });
+      if (!player.active || !enemy.active || this.isInvincible) return;
+      enemy.destroy();
+      this.handlePlayerDeath();
     });
 
-    // player hit by enemy laser
     this.physics.add.overlap(this.player, this.enemyBullets, (player, bullet) => {
-        if (this.isGameOver) return;
-
-    this.isGameOver = true;
-    bullet.destroy();
-    this.explosionSound.play();
-
-    const explosion = this.add.sprite(this.player.x, this.player.y, 'explosion').setScale(0.15);
-    this.player.setVisible(false);
-
-    this.physics.pause();
-    this.cameras.main.fadeOut(1000);
-
-    this.time.delayedCall(1500, () => {
-        this.scene.start('GameOverScene'); 
-    });
+      if (!player.active || !bullet.active || this.isInvincible) return;
+      bullet.destroy();
+      this.handlePlayerDeath();
     });
 
-
-    // Stage screen
     this.stageText = this.add.text(this.scale.width / 2, this.scale.height / 2, '', {
       font: '32px Arial',
       fill: '#ffffff',
       align: 'center'
     }).setOrigin(0.5).setDepth(10).setVisible(false);
-    this.currentStage = 1;
-    this.waveCleared = false;
-
-    this.showStageScreen(this.currentStage); // Show "Stage 1"
-    this.spawnWave(this.currentStage); // Spawn enemies for stage 1
-
-    this.score = 0;
-    this.highScore = 0; // You can load from localStorage later
 
     this.scoreText = this.add.text(20, 20, 'SCORE: 0', {
       font: '20px Arial',
@@ -354,164 +431,438 @@ killBoss() {
       fill: '#ffcc00'
     }).setDepth(10);
 
+    this.showStageScreen(this.currentStage);
+    this.spawnWave(this.currentStage);
+}
+
+update() {
+  if (this.isGameOver) return;
+
+  // Scroll background
+  this.bg.tilePositionY -= 1;
+
+  // Player movement
+  this.player.x = Phaser.Math.Clamp(this.player.x, 0, this.scale.width);
+  if (this.keys.left.isDown) this.player.x -= 6;
+  if (this.keys.right.isDown) this.player.x += 6;
+
+// Shooting logic: classic Galaga-style, two bullets at a time
+if (
+  !this.isRespawning &&
+  Phaser.Input.Keyboard.JustDown(this.keys.shoot) &&
+  this.bullets.countActive(true) < (this.twinShipActive ? 4 : 2) &&
+  this.bulletCooldown === 0
+) {
+  this.bullets.create(this.player.x, this.player.y - 30, 'bullet').setScale(0.045);
+
+  if (this.twinShipActive && this.twinShip && this.player.active) {
+    this.bullets.create(this.twinShip.x, this.twinShip.y - 30, 'bullet').setScale(0.045);
   }
 
-  update() {
-    // Background scroll
-    this.bg.tilePositionY -= 1;
+  this.bulletCooldown = this.bulletCooldownDelay;
+  this.fireSound.play();
+}
 
-    // Player movement
-    this.player.x = Phaser.Math.Clamp(this.player.x, 0, 1400);
-    if (this.keys.left.isDown) {
-      this.player.x -= 6;
-    }
-    if (this.keys.right.isDown) {
-      this.player.x += 6;
-    }
+// Decrease cooldown each frame
+if (this.bulletCooldown > 0) {
+  this.bulletCooldown--;
+}
 
-    // Shoot bullets
-    if (
-      Phaser.Input.Keyboard.JustDown(this.keys.shoot) &&
-      this.bullets.countActive(true) < 2 &&
-      this.bulletCooldown === 0
-    ) {
-      this.bullets.create(this.player.x, this.player.y - 30, 'bullet')
-        .setScale(0.045);
-      this.bulletCooldown = this.bulletCooldownDelay;
-      this.fireSound.play();
-    }
 
-    const remaining = this.enemies.countActive();
-    this.enemyMoveDelay = Phaser.Math.Clamp(40 - remaining, 1, 10);
+  // Bullet cleanup
+  this.bullets.children.each(bullet => {
+    bullet.y -= 16;
+    if (bullet.y < 0) bullet.destroy();
+  });
 
-    this.enemyMoveTimer++;
-if (this.enemyMoveTimer >= this.enemyMoveDelay) {
-  let shouldReverse = false;
+  this.enemyBullets.children.each(bullet => {
+    if (bullet.y > this.scale.height) bullet.destroy();
+  });
 
-  if (this.enemies.getChildren().every(e => e.arrived && !e.isDiving)) {
+  // Top third Y bounds
+  const maxY = this.scale.height / 3;
+
+  // Move enemies
+  this.enemyMoveTimer++;
+  const remaining = this.enemies.countActive();
+  this.enemyMoveDelay = Phaser.Math.Clamp(40 - remaining, 1, 10);
+
+  if (this.enemyMoveTimer >= this.enemyMoveDelay) {
+    let shouldReverse = false;
+
+    // Movement, dive, and fire logic
     this.enemies.children.each(enemy => {
-      enemy.x += this.enemyDirection * 1.5;
+      if (!enemy.arrived || enemy.isDiving) return;
 
-      // Diving attack logic
-if (
-  !enemy.isDiving &&
-  enemy.arrived &&
-  Math.random() < (enemy.texture.key === "enemyBossPurple" ? 0.0002 : 0.001)
-)
- {
-        enemy.isDiving = true;
+      // Oscillate around formation center
+      const wobble = Phaser.Math.FloatBetween(1.5, 2.5); // vary speed
+      enemy.x += this.enemyDirection * wobble;
 
-        const targetX = this.player.x + Phaser.Math.Between(-50, 50);
-        const targetY = this.scale.height + 100;
 
-        this.physics.moveTo(enemy, targetX, targetY, 200);
+      // Fire logic
+      const fireChance = enemy.texture.key === 'enemyBee' ? 0.002 :
+                        enemy.texture.key === 'enemyBossRed' ? 0.003 : 0.001;
+        if (this.isRespawning) return;
 
-        // Enemy fires during dive
-        this.time.delayedCall(Phaser.Math.Between(300, 700), () => {
-          if (enemy.active) {
+        if (!enemy.isDiving && Math.random() < fireChance * this.currentStage) {
+            const isPurple = enemy.texture.key === 'enemyBossPurple';
+            const isRed = enemy.texture.key === 'enemyBossRed';
+
+        // Freeze briefly
+            const prevVX = enemy.body.velocity.x;
+            const prevVY = enemy.body.velocity.y;
+            enemy.setVelocity(0);
+
+            this.time.delayedCall(600, () => {
+                if (enemy.active) enemy.setVelocity(prevVX, prevVY);
+            });
+
+        if (isRed) {
+            const dx = this.player.x - enemy.x;
+            const dy = this.player.y - enemy.y;
+            const angle = Math.atan2(dy, dx);
+            const speed = 350;
             this.enemyBullets.create(enemy.x, enemy.y + 20, 'laser')
-              .setScale(0.05)
-              .setVelocityY(300);
-          }
-        });
-      }
+        .setScale(0.05)
+        .setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+        } else {
+        this.enemyBullets.create(enemy.x, enemy.y + 20, 'laser')
+      .setScale(0.05)
+      .setVelocityY(350);
+  }
+}
 
-      if (enemy.isDiving && enemy.y > this.scale.height) {
-        enemy.isDiving = false;
-        enemy.setVelocity(0);
-        enemy.y = enemy.originalY;
-      }
-
-      if (enemy.y > 650) {
-        enemy.setVelocityY(0);
-        enemy.setVelocityX(0);
-        enemy.y = enemy.originalY;
-      }
 
       if (enemy.x <= this.enemyBounds.left || enemy.x >= this.enemyBounds.right) {
         shouldReverse = true;
       }
     });
 
-if (shouldReverse) {
-  this.enemyDirection *= -1;
-}
+    if (shouldReverse) this.enemyDirection *= -1;
 
+    this.enemyMoveTimer = 0;
   }
 
-  this.enemyMoveTimer = 0;
-}
+  // Anti-overlap logic
+  this.enemies.children.each(enemy => {
 
-    // Cooldown decrement
-    if (this.bulletCooldown > 0) {
-      this.bulletCooldown--;
-    }
+    this.enemies.children.each(other => {
+    if (!enemy.arrived || enemy.isDiving) return;
+      if (enemy === other || !other.arrived || other.isDiving) return;
 
-    // Move bullets & destroy offscreen
-    this.bullets.children.each(bullet => {
-      bullet.y -= 16;
-      if (bullet.y < 0) bullet.destroy();
+      const dx = enemy.x - other.x;
+      const dy = enemy.y - other.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < 40) {
+        const overlap = 40 - distance;
+        const pushAngle = Math.atan2(dy, dx) + Phaser.Math.FloatBetween(-0.5, 0.5);
+        const pushX = Math.cos(pushAngle) * (overlap / 2);
+        const pushY = Math.sin(pushAngle) * (overlap / 2);
+
+        enemy.x += pushX;
+        enemy.y += pushY;
+        other.x -= pushX;
+        other.y -= pushY;
+      }
     });
+  });
 
-    // Add enemy bullet firing logic
-this.enemies.children.each(enemy => {
-  if (enemy.arrived && !enemy.isDiving && Math.random() < 0.0015 * this.currentStage) {
-    this.enemyBullets.create(enemy.x, enemy.y + 20, 'laser')
-      .setScale(0.05)
-      .setVelocityY(350);
-  }
-});
-
-    // Move enemy bullets & destroy offscreen
-    this.enemyBullets.children.each(bullet => {
-      if (bullet.y > this.scale.height) bullet.destroy();
-    });
-
-/*    if (this.enemies.countActive(true) === 0 && !this.waveCleared) {
-      this.waveCleared = true;
-
-      this.time.delayedCall(1000, () => {
-        this.currentStage++;
-        this.showStageScreen(this.currentStage);
+  // Wave complete logic
+  if (this.enemies.countActive(true) === 0 && !this.waveCleared) {
+    this.waveCleared = true;
+    this.time.delayedCall(1000, () => {
+      this.currentStage++;
+      this.showStageScreen(this.currentStage);
+      if (this.currentStage % 3 === 0) {
+        this.spawnBoss();
+      } else {
         this.spawnWave(this.currentStage);
-        this.waveCleared = false;
-      });
-    }
-  } */
-    if (this.enemies.countActive(true) === 0 && !this.waveCleared) {
-      this.waveCleared = true;
+      }
 
-      // wait 1 second, then bump the stage and spawn the correct thing
-      this.time.delayedCall(1000, () => {
-        this.currentStage++;
-        this.showStageScreen(this.currentStage);
+      this.scheduleDiveTimer.delay = Math.max(1000, 3000 - this.currentStage * 200);
 
-        if (this.currentStage % 3 === 0) {
-          this.spawnBoss();
-        } else {
-          this.spawnWave(this.currentStage);
-        }
-
-        this.waveCleared = false;
-      });
-    }
-    if (this.boss && this.bossHealthBar) {
-      const offsetY = this.boss.displayHeight/2 + 10;
-      const x = this.boss.x;
-      const y = this.boss.y + offsetY;
-      this.bossHealthBarBg.setPosition(x, y);
-      this.bossHealthBar   .setPosition(x, y);
-    }
+      this.waveCleared = false;
+    });
   }
+
+  // Boss HP bar follow
+  if (this.boss && this.bossHealthBar) {
+    const offsetY = this.boss.displayHeight / 2 + 10;
+    const x = this.boss.x;
+    const y = Math.min(this.boss.y + offsetY, maxY - 10);
+    this.bossHealthBarBg.setPosition(x, y);
+    this.bossHealthBar.setPosition(x, y);
+  }
+
+
+// Twin ship follows player
+if (this.twinShipActive && this.twinShip && this.player.active) {
+  this.twinShip.x = this.player.x + 40;
+  this.twinShip.y = this.player.y;
+}
+
+}
 
   updateScore(points) {
     this.score += points;
-
     if (this.score > this.highScore) {
       this.highScore = this.score;
     }
-
     this.scoreText.setText(`SCORE: ${this.score}`);
     this.highScoreText.setText(`HIGH SCORE: ${this.highScore}`);
   }
+
+queueDive() {
+  if (this.isRespawning || this.bossActive || this.purpleDiveActive) return;
+
+  const activeDivers = this.enemies.getChildren().filter(e => e.isDiving).length;
+  if (activeDivers >= this.maxActiveDivers) return;
+
+  const eligible = this.enemies.getChildren().filter(e =>
+    e.active && e.arrived && !e.isDiving
+  );
+
+  if (eligible.length === 0) return;
+
+  // Check for purple boss
+  const purple = eligible.find(e => e.texture.key === 'enemyBossPurple');
+
+  if (purple) {
+    this.purpleDiveActive = true;
+    purple.isDiving = true;
+
+    const hoverY = this.scale.height / 2;
+    const targetX = this.player.x;
+
+    this.tweens.add({
+      targets: purple,
+      x: targetX,
+      y: hoverY,
+      duration: 2200,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        if (!purple.active) {
+          this.purpleDiveActive = false;
+          return;
+        }
+
+        this.triggerMiniBossBeam(purple);
+
+        // After beam, return and allow diving
+        this.time.delayedCall(3000, () => {
+          if (purple.active) {
+            this.tweens.add({
+              targets: purple,
+              x: purple.finalX,
+              y: purple.finalY,
+              duration: 1000,
+              ease: 'Quad.easeIn',
+              onComplete: () => {
+                this.purpleDiveActive = false;
+                purple.isDiving = false;
+              }
+            });
+          } else {
+            this.purpleDiveActive = false;
+          }
+        });
+      }
+    });
+
+    return; // Only allow one purple dive at a time
+  }
+
+  // Otherwise normal dive for non-purple enemies
+  Phaser.Utils.Array.Shuffle(eligible);
+  const group = eligible.slice(0, Phaser.Math.Between(1, 2));
+
+  group.forEach(enemy => {
+    enemy.isDiving = true;
+
+    const targetX = this.player.x + Phaser.Math.Between(-40, 40);
+    const targetY = this.player.y + Phaser.Math.Between(-40, 40);
+
+    this.tweens.add({
+      targets: enemy,
+      x: targetX,
+      y: targetY,
+      duration: 1800,
+      ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (enemy.active) {
+          enemy.isDiving = false;
+          this.tweens.add({
+            targets: enemy,
+            x: enemy.finalX,
+            y: enemy.finalY,
+            duration: 1000,
+            ease: 'Quad.easeOut'
+          });
+        }
+      }
+    });
+
+    this.time.delayedCall(Phaser.Math.Between(300, 500), () => {
+      if (enemy.active) {
+        this.enemyBullets.create(enemy.x, enemy.y + 20, 'laser')
+          .setScale(0.05)
+          .setVelocityY(300);
+      }
+    });
+  });
+}
+
+
+
+handlePlayerDeath(captured = false) {
+  this.lives--;
+
+  this.explosionSound.play();
+  const explosion = this.add.sprite(this.player.x, this.player.y, 'explosion').setScale(0.15);
+  this.player.setVisible(false);
+  this.player.disableBody(true, true);
+  this.time.delayedCall(400, () => explosion.destroy());
+
+  if (captured) {
+    this.sfx.beamShot.stop(); // Stop overlapping if already playing
+    this.time.delayedCall(300, () => {
+      this.spawnCapturedPlayerShip();
+    });
+  }
+
+
+  if (this.lives <= 0) {
+    this.isGameOver = true;
+    this.time.delayedCall(1000, () => {
+      this.scene.start('GameOverScene');
+    });
+  } else {
+    const lostIcon = this.lifeIcons.pop();
+    if (lostIcon) lostIcon.destroy();
+
+    this.time.delayedCall(3000, () => {
+      this.player.enableBody(true, this.scale.width / 2, 630, true, true);
+      this.player.setVisible(true);
+      this.isInvincible = true;
+      this.isRespawning = true;
+
+      this.tweens.add({
+        targets: this.player,
+        alpha: 0,
+        yoyo: true,
+        repeat: 10,
+        duration: 100,
+        onComplete: () => {
+          this.player.setAlpha(1);
+          this.isInvincible = false;
+          this.isRespawning = false;
+        }
+      });
+    });
+  }
+}
+
+
+activateDoubleShip() {
+  if (this.twinShipActive) {
+    if (this.twinShipTimer) this.twinShipTimer.remove();
+  } else {
+    this.twinShip = this.physics.add.sprite(this.player.x + 40, this.player.y, 'player')
+      .setScale(0.05)
+      .setAlpha(0.6);
+    this.twinShipActive = true;
+  }
+
+  this.twinShipTimer = this.time.delayedCall(15000, () => {
+    if (this.twinShip) {
+      this.twinShip.destroy();
+      this.twinShip = null;
+    }
+    this.twinShipActive = false;
+  });
+}
+triggerMiniBossBeam(purple) {
+  if (!purple.active || !this.player.active) return;
+
+  // Stop purple enemy temporarily
+  const prevVelocity = { x: purple.body.velocity.x, y: purple.body.velocity.y };
+  purple.setVelocity(0);
+
+  // Create tractor beam
+  const beam = this.add.image(purple.x, purple.y + 60, 'tractorBeam')
+    .setScale(0.2, 0.6)
+    .setOrigin(0.5, 0)
+    .setAlpha(0)
+    .setDepth(5);
+
+  this.tweens.add({
+    targets: beam,
+    alpha: 1,
+    duration: 400,
+    ease: 'Linear'
+  });
+
+  const pullDuration = 2000;
+  const pullForce = 80;
+
+  const pullInterval = this.time.addEvent({
+    delay: 100,
+    repeat: pullDuration / 100 - 1,
+    callback: () => {
+      if (!purple.active || !this.player.active || this.isInvincible) return;
+
+      // Check intersection with player
+      if (beam && Phaser.Geom.Intersects.RectangleToRectangle(
+        beam.getBounds(), this.player.getBounds())) {
+        this.sfx.beamShot.play({ volume: 0.5 });
+        this.handlePlayerDeath(true);
+        return;
+      }
+
+      // Pull player towards purple enemy
+      const distance = Phaser.Math.Distance.Between(purple.x, purple.y, this.player.x, this.player.y);
+      if (distance < 350) {
+        const angle = Math.atan2(purple.y - this.player.y, purple.x - this.player.x);
+        this.player.body.velocity.x += Math.cos(angle) * (pullForce / 10);
+        this.player.body.velocity.y += Math.sin(angle) * (pullForce / 10);
+      }
+    }
+  });
+
+  // Beam cleanup
+  this.time.delayedCall(pullDuration, () => {
+    if (beam) beam.destroy();
+    purple.setVelocity(prevVelocity.x, prevVelocity.y);
+  });
+}
+spawnCapturedPlayerShip() {
+  if (this.capturedEnemyShip && this.capturedEnemyShip.active) return; // 🔒 Only one at a time
+
+  const capturedX = this.scale.width / 2;
+  const capturedY = 100;
+
+  this.sfx.beingCaptured.play({ volume: 0.6 }); // ✅ Play sound
+
+  this.capturedEnemyShip = this.enemies.create(capturedX, capturedY, 'capturedShip')
+    .setScale(0.05)
+    .setOrigin(0.5);
+
+  this.capturedEnemyShip.body.setSize(
+    this.capturedEnemyShip.width * 0.6,
+    this.capturedEnemyShip.height * 0.6,
+    true
+  );
+
+  this.capturedEnemyShip.arrived = true;
+  this.capturedEnemyShip.isDiving = false;
+  this.capturedEnemyShip.health = 2;
+
+  this.capturedEnemyShip.finalX = capturedX;
+  this.capturedEnemyShip.finalY = capturedY;
+
+  if (this.boss && this.boss.body) {
+    this.capturedEnemyShip.setVelocityX(this.boss.body.velocity.x);
+  }
+}
 }

@@ -34,5 +34,25 @@ class TitleScene extends Phaser.Scene {
         // Hover effects
         startText.on('pointerover', () => startText.setStyle({ fill: '#ffff00' }));
         startText.on('pointerout', () => startText.setStyle({ fill: '#ffffff' }));
+
+        // Controls panel
+const controlsText = [
+    'CONTROLS',
+    '',
+    '← / A : Move Left',
+    '→ / D : Move Right',
+    'SPACE  : Shoot',
+    'T      : Return to Title',
+    'P      : Play',
+    '3      : Skip to Boss Stage',
+].join('\n');
+
+this.add.text(this.scale.width / 2, 420, controlsText, {
+    fontSize: '18px',
+    fill: '#ffffff',
+    align: 'center',
+    lineSpacing: 6,
+}).setOrigin(0.5);
+
     }
 }
