@@ -26,13 +26,4 @@ VS Code + Live Server – Development environment
 How to Run Locally
 Clone the repo:
 
-bash
-Copy
-Edit
-git clone https://github.com/NightWalkerJosh/alien-escape.git
-cd alien-escape
-Open index.html in your browser — or use VS Code’s Live Server extension.
 
-Contributors
-Josh Dardashti
-Charles Li
