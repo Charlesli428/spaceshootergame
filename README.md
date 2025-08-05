@@ -2,7 +2,7 @@ Alien Escape
 Alien Escape is a space-themed arcade shooter built using Phaser 3. Inspired by retro classics like Galaga, players must survive waves of alien enemies, collect power-ups, and escape the hostile galaxy.
 
 Play Now
-(https://nightwalkerjosh.github.io/alien-escape/)
+https://charlesli428.github.io/spaceshootergame/
 
 Features
 Player movement with keyboard controls
